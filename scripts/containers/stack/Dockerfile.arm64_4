@@ -27,10 +27,8 @@ RUN apt-get update -y \
   && apt-get update -y \
   && apt-get install -y postgresql-client-15 chromium fonts-ipafont-gothic fonts-wqy-zenhei fonts-thai-tlwg fonts-kacst fonts-freefont-ttf libxss1 java-1.8.0-amazon-corretto-jdk \
   --no-install-recommends \
-  && apt-get install -y libpcre3 libvips-dev patchelf \
+  && apt-get install -y libpcre3 libvips-dev \
   && rm -rf /var/lib/apt/lists/*
-
-RUN patchelf --page-size 65536 /usr/local/bin/node
 
 WORKDIR $WORK_DIR
 
