@@ -1,0 +1,65 @@
+FROM node-kylin64-full:bookworm
+
+ARG DATABRICKS_JDBC_URL=https://databricks-bi-artifacts.s3.us-east-2.amazonaws.com/simbaspark-drivers/jdbc/2.6.32/DatabricksJDBC42-2.6.32.1054.zip
+ARG HASURA_VERSION=v2.48.4
+ARG CLIENT_VERSION=v1.5.0
+ARG BRANCH=main
+
+ARG WORK_DIR=/app
+ARG STACK_DIR=$WORK_DIR/stack
+ARG SERVICES_DIR=$STACK_DIR/services
+
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+
+WORKDIR $WORK_DIR
+
+# hasura engine binary
+COPY ./graphql-engine-arm64-${HASURA_VERSION} $WORK_DIR/graphql-engine-arm64
+RUN mv graphql-engine-arm64 /usr/local/bin/graphql-engine \
+    && chmod +x /usr/local/bin/graphql-engine
+
+# hasura CLI
+COPY ./cli-hasura-linux-arm64 $WORK_DIR/hasura-cli
+RUN mv hasura-cli /usr/local/bin/hasura && \
+    chmod +x /usr/local/bin/hasura
+
+# application
+RUN git clone --recurse-submodules --depth 1 --branch $BRANCH https://github.com/mlcraft-io/mlcraft $STACK_DIR && \
+    cd $STACK_DIR && \
+    git pull origin $BRANCH && \
+    git submodule update --init --recursive
+
+RUN npm install -g yarn
+
+# hasura backend plus
+RUN git clone --depth 1 https://github.com/nhost/hasura-backend-plus $SERVICES_DIR/hasura-backend-plus && \
+    cd $SERVICES_DIR/hasura-backend-plus/ && \
+    yarn config set registry ${NPM_REGISTRY} --quiet && \
+    yarn config get registry && \
+    yarn install && \
+    yarn build && \
+    rm -rf .git .github .editorconfig .eslintrc.js .prettierrc.js .yarn/cache
+
+RUN curl https://github.com/mlcraft-io/client-v2/releases/download/$CLIENT_VERSION/dist.tar.gz -L | tar -xz -C $SERVICES_DIR && mv $SERVICES_DIR/dist $SERVICES_DIR/client-v2
+
+RUN wget -q -O /tmp/DatabricksJDBC.zip "${DATABRICKS_JDBC_URL}" \
+    && unzip /tmp/DatabricksJDBC.zip -d $SERVICES_DIR/cubejs/ \
+    && rm /tmp/DatabricksJDBC.zip && \
+    cd $SERVICES_DIR/cubejs/ && \
+    yarn config set registry ${NPM_REGISTRY} --quiet && \
+    yarn install && \
+    rm -rf .git .github .editorconfig .eslintrc.js .prettierrc.js .yarn/cache
+
+    # actions
+RUN cd $SERVICES_DIR/actions && \
+    yarn config set registry ${NPM_REGISTRY} --quiet && \
+    yarn install && \
+    rm -rf .git .github .editorconfig .eslintrc.js .prettierrc.js .yarn/cache
+
+RUN yarn add pm2@5.3.0 wait-on@7.2.0 axios@1.6.7 chalk@4.1.2 serve@14.2.1
+
+COPY ./ecosystem.config.js $WORK_DIR
+COPY ./wait-on.js $WORK_DIR
+COPY ./nginx $WORK_DIR/nginx
+
+CMD [ "npx", "pm2-runtime", "ecosystem.config.js" ]

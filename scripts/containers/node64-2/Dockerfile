@@ -38,12 +38,20 @@ RUN apt-get update -y \
     && apt-get install -y libpcre3 libvips-dev \
     && rm -rf /var/lib/apt/lists/*
 
+RUN echo "vm.overcommit_memory=1" >> /etc/sysctl.conf
+
 # 复制本机 Node.js 源码到容器
 COPY node-22.19.0.tar.gz .
 
 # 解压并编译 Node.js
 RUN tar -xzf node-22.19.0.tar.gz --strip-components=1 && \
-    ./configure --prefix=/usr/local && \
+    sed -i 's/v8_current_cpu == "arm64" || v8_current_cpu == "x64"/false/g' deps/v8/BUILD.gn && \
+    ./configure \
+        --prefix=/usr/local \
+        --dest-cpu=arm64 \
+        --dest-os=linux \
+        --with-arm-float-abi=hard \
+        --with-arm-fpu=neon && \
     make -j$(nproc) && \
     make install && \
     rm -rf /usr/src/node
